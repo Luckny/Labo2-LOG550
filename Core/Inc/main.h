@@ -72,14 +72,6 @@ void Error_Handler(void);
 #define BUTTON_EXTI13_Pin GPIO_PIN_13
 #define BUTTON_EXTI13_GPIO_Port GPIOC
 #define BUTTON_EXTI13_EXTI_IRQn EXTI15_10_IRQn
-#define ARD_A5_Pin GPIO_PIN_0
-#define ARD_A5_GPIO_Port GPIOC
-#define ARD_A4_Pin GPIO_PIN_1
-#define ARD_A4_GPIO_Port GPIOC
-#define ARD_A3_Pin GPIO_PIN_2
-#define ARD_A3_GPIO_Port GPIOC
-#define ARD_A2_Pin GPIO_PIN_3
-#define ARD_A2_GPIO_Port GPIOC
 #define ARD_D1_Pin GPIO_PIN_0
 #define ARD_D1_GPIO_Port GPIOA
 #define ARD_D0_Pin GPIO_PIN_1
@@ -96,10 +88,6 @@ void Error_Handler(void);
 #define ARD_D12_GPIO_Port GPIOA
 #define ARD_D11_Pin GPIO_PIN_7
 #define ARD_D11_GPIO_Port GPIOA
-#define ARD_A1_Pin GPIO_PIN_4
-#define ARD_A1_GPIO_Port GPIOC
-#define ARD_A0_Pin GPIO_PIN_5
-#define ARD_A0_GPIO_Port GPIOC
 #define ARD_D3_Pin GPIO_PIN_0
 #define ARD_D3_GPIO_Port GPIOB
 #define ARD_D6_Pin GPIO_PIN_1

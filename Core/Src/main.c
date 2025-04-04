@@ -93,7 +93,7 @@ osThreadId_t ADC_CmdHandle;
 const osThreadAttr_t ADC_Cmd_attributes = {
   .name = "ADC_Cmd",
   .stack_size = 256 * 4,
-  .priority = (osPriority_t) osPriorityLow5,
+  .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for TEMP_Read */
 osThreadId_t TEMP_ReadHandle;
@@ -720,7 +720,7 @@ static void MX_TIM2_Init(void)
 
   /* USER CODE END TIM2_Init 1 */
   htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 1;
+  htim2.Init.Prescaler = 0;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
   htim2.Init.Period = 4294967295;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
@@ -1223,27 +1223,6 @@ void StartAlarmMsgQ(void *argument)
     osDelay(1);
   }
   /* USER CODE END StartAlarmMsgQ */
-}
-
-/**
-  * @brief  Period elapsed callback in non blocking mode
-  * @note   This function is called  when TIM7 interrupt took place, inside
-  * HAL_TIM_IRQHandler(). It makes a direct call to HAL_IncTick() to increment
-  * a global variable "uwTick" used as application time base.
-  * @param  htim : TIM handle
-  * @retval None
-  */
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
-{
-  /* USER CODE BEGIN Callback 0 */
-
-  /* USER CODE END Callback 0 */
-  if (htim->Instance == TIM7) {
-    HAL_IncTick();
-  }
-  /* USER CODE BEGIN Callback 1 */
-
-  /* USER CODE END Callback 1 */
 }
 
 /**
