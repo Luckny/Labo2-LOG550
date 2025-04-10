@@ -1044,6 +1044,10 @@ static void MX_GPIO_Init(void)
 void StartLED_Flash(void *argument)
 {
   /* USER CODE BEGIN 5 */
+  // On veut fait clignoter EXACTEMENT toutes les 200ms
+  uint32_t targetTick = xTaskGetTickCount();
+  const uint32_t period = pdMS_TO_TICKS(200); // 200 ms period
+
   /* Infinite loop */
   for (;;)
   {
@@ -1071,7 +1075,8 @@ void StartLED_Flash(void *argument)
     // HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_14); // NOTE: LED2
     // osSemaphoreRelease(myBinarySem01Handle);
 
-    osDelay(200);
+    targetTick += period;     // On calcule le prochain tick cible
+    osDelayUntil(targetTick); // On attend jusqu'à la prochaine itération
   }
   /* USER CODE END 5 */
 }
@@ -1087,20 +1092,22 @@ void UART_Cmd_RX(void *argument)
 {
   /* USER CODE BEGIN UART_Cmd_RX */
   /* Infinite loop */
+  uint8_t rx_data;
+
   for (;;)
   {
-    uint16_t dataOut;
-    osStatus_t result =
-      osMessageQueueGet(CommandQueueHandle, &dataOut, NULL, osWaitForever);
-    if (result == osOK)
+    if (HAL_UART_Receive(&huart4, &rx_data, 1, 200) == HAL_OK)
     {
-      HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
-      uint8_t buffer[5] = "";
-      sprintf((char *)buffer, "%d\n\r", dataOut);
-      HAL_UART_Transmit(&huart1, buffer, sizeof(buffer), 10);
-      osDelay(1);
+      if (rx_data == 'S')
+      {
+        acquisition_active = 1;
+      }
+      else if (rx_data == 'X')
+      {
+        acquisition_active = 0;
+      }
     }
-    osDelay(1);
+    osDelay(pdMS_TO_TICKS(200)); // Vérification toutes les 200ms
   }
   /* USER CODE END UART_Cmd_RX */
 }
