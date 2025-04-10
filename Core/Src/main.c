@@ -15,6 +15,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "cmsis_os.h"
+#include "stm32l4xx_hal_gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -1048,6 +1049,23 @@ void StartLED_Flash(void *argument)
   {
     // LED1 Clignote des tout le temps
     HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
+
+    if (acquisition_active)
+    {
+      // LED2 Clignote quand l' acquisition est active
+      HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_14);
+    }
+    else
+    {
+      // Sinon elle est off
+      HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_RESET);
+    }
+
+    // LED3 allumé si débordement
+    if (queue_overflow)
+    {
+      HAL_GPIO_WritePin(GPIOC, GPIO_PIN_9, GPIO_PIN_SET);
+    }
 
     // osSemaphoreAcquire(myBinarySem01Handle, osWaitForever);
     // HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_14); // NOTE: LED2
