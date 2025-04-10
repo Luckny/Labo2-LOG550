@@ -1,0 +1,13 @@
+# This is a suggested starting point and may need tweaking.
+BasedOnStyle: LLVM
+IndentWidth: 2
+ContinuationIndentWidth: 2
+TabWidth: 2
+UseTab: Never
+# STM32CubeIDE typically puts braces on a new line—Allman style.
+BreakBeforeBraces: Allman
+AllowShortBlocksOnASingleLine: Never
+AllowShortFunctionsOnASingleLine: None
+ColumnLimit: 80
+ReflowComments: true
+SortIncludes: Never
