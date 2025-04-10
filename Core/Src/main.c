@@ -58,30 +58,71 @@ osThreadId_t myLedTaskHandle;
 const osThreadAttr_t myLedTask_attributes = {
   .name = "myLedTask",
   .stack_size = 128 * 4,
-  .priority = (osPriority_t)osPriorityNormal,
+  .priority = (osPriority_t)osPriorityLow1,
 };
 /* Definitions for myUartTask */
 osThreadId_t myUartTaskHandle;
 const osThreadAttr_t myUartTask_attributes = {
   .name = "myUartTask",
-  .stack_size = 128 * 4,
-  .priority = (osPriority_t)osPriorityLow,
+  .stack_size = 256 * 4,
+  .priority = (osPriority_t)osPriorityLow3,
 };
-/* Definitions for myCounterTask */
-osThreadId_t myCounterTaskHandle;
-const osThreadAttr_t myCounterTask_attributes = {
-  .name = "myCounterTask",
-  .stack_size = 128 * 4,
-  .priority = (osPriority_t)osPriorityLow,
+/* Definitions for mySendSampleTas */
+osThreadId_t mySendSampleTasHandle;
+const osThreadAttr_t mySendSampleTas_attributes = {
+  .name = "mySendSampleTas",
+  .stack_size = 256 * 4,
+  .priority = (osPriority_t)osPriorityLow6,
 };
-/* Definitions for myDataQueue */
-osMessageQueueId_t myDataQueueHandle;
-const osMessageQueueAttr_t myDataQueue_attributes = {.name = "myDataQueue"};
+/* Definitions for myADCTask */
+osThreadId_t myADCTaskHandle;
+const osThreadAttr_t myADCTask_attributes = {
+  .name = "myADCTask",
+  .stack_size = 256 * 4,
+  .priority = (osPriority_t)osPriorityNormal,
+};
+/* Definitions for myTempTask */
+osThreadId_t myTempTaskHandle;
+const osThreadAttr_t myTempTask_attributes = {
+  .name = "myTempTask",
+  .stack_size = 256 * 4,
+  .priority = (osPriority_t)osPriorityLow2,
+};
+/* Definitions for myAlarmTask */
+osThreadId_t myAlarmTaskHandle;
+const osThreadAttr_t myAlarmTask_attributes = {
+  .name = "myAlarmTask",
+  .stack_size = 128 * 4,
+  .priority = (osPriority_t)osPriorityLow2,
+};
+/* Definitions for SensorDataQ */
+osMessageQueueId_t SensorDataQHandle;
+const osMessageQueueAttr_t SensorDataQ_attributes = {.name = "SensorDataQ"};
+/* Definitions for CommandQueue */
+osMessageQueueId_t CommandQueueHandle;
+const osMessageQueueAttr_t CommandQueue_attributes = {.name = "CommandQueue"};
 /* Definitions for myBinarySem01 */
 osSemaphoreId_t myBinarySem01Handle;
 const osSemaphoreAttr_t myBinarySem01_attributes = {.name = "myBinarySem01"};
 /* USER CODE BEGIN PV */
 uint16_t counter = 0;
+
+volatile uint8_t acquisition_active = 0;
+
+volatile uint8_t queue_overflow = 0;
+
+typedef enum
+{
+  ADC_SAMPLE,
+  TEMP_SAMPLE
+} DataType_t;
+
+typedef struct
+{
+  DataType_t type;
+  uint32_t value;
+} SampleData_t;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -99,9 +140,12 @@ static void MX_USART1_UART_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_USART3_UART_Init(void);
 static void MX_USB_OTG_FS_USB_Init(void);
-void StartMyLedTask(void *argument);
-void StartMyUartTask(void *argument);
-void StartMyCounterTask(void *argument);
+void StartLED_Flash(void *argument);
+void UART_Cmd_RX(void *argument);
+void UART_SendSample(void *argument);
+void ADC_Cmd(void *argument);
+void TEMP_Read(void *argument);
+void AlarmMsgq(void *argument);
 
 /* USER CODE BEGIN PFP */
 
@@ -181,9 +225,13 @@ int main(void)
   /* USER CODE END RTOS_TIMERS */
 
   /* Create the queue(s) */
-  /* creation of myDataQueue */
-  myDataQueueHandle =
-    osMessageQueueNew(2, sizeof(uint16_t), &myDataQueue_attributes);
+  /* creation of SensorDataQ */
+  SensorDataQHandle =
+    osMessageQueueNew(2, sizeof(uint16_t), &SensorDataQ_attributes);
+
+  /* creation of CommandQueue */
+  CommandQueueHandle =
+    osMessageQueueNew(5, sizeof(uint16_t), &CommandQueue_attributes);
 
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
@@ -191,14 +239,23 @@ int main(void)
 
   /* Create the thread(s) */
   /* creation of myLedTask */
-  myLedTaskHandle = osThreadNew(StartMyLedTask, NULL, &myLedTask_attributes);
+  myLedTaskHandle = osThreadNew(StartLED_Flash, NULL, &myLedTask_attributes);
 
   /* creation of myUartTask */
-  myUartTaskHandle = osThreadNew(StartMyUartTask, NULL, &myUartTask_attributes);
+  myUartTaskHandle = osThreadNew(UART_Cmd_RX, NULL, &myUartTask_attributes);
 
-  /* creation of myCounterTask */
-  myCounterTaskHandle =
-    osThreadNew(StartMyCounterTask, NULL, &myCounterTask_attributes);
+  /* creation of mySendSampleTas */
+  mySendSampleTasHandle =
+    osThreadNew(UART_SendSample, NULL, &mySendSampleTas_attributes);
+
+  /* creation of myADCTask */
+  myADCTaskHandle = osThreadNew(ADC_Cmd, NULL, &myADCTask_attributes);
+
+  /* creation of myTempTask */
+  myTempTaskHandle = osThreadNew(TEMP_Read, NULL, &myTempTask_attributes);
+
+  /* creation of myAlarmTask */
+  myAlarmTaskHandle = osThreadNew(AlarmMsgq, NULL, &myAlarmTask_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -839,8 +896,7 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB,
                     ARD_D8_Pin | ISM43362_BOOT0_Pin | ISM43362_WAKEUP_Pin |
-                      LED2_Pin | SPSGRF_915_SDN_Pin | ARD_D5_Pin |
-                      SPSGRF_915_SPI3_CSN_Pin,
+                      LED1_Pin | SPSGRF_915_SDN_Pin | ARD_D5_Pin | LED2_Pin,
                     GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
@@ -912,10 +968,9 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_Init(ARD_D6_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pins : ARD_D8_Pin ISM43362_BOOT0_Pin ISM43362_WAKEUP_Pin
-     LED2_Pin SPSGRF_915_SDN_Pin ARD_D5_Pin SPSGRF_915_SPI3_CSN_Pin */
+     LED1_Pin SPSGRF_915_SDN_Pin ARD_D5_Pin LED2_Pin */
   GPIO_InitStruct.Pin = ARD_D8_Pin | ISM43362_BOOT0_Pin | ISM43362_WAKEUP_Pin |
-                        LED2_Pin | SPSGRF_915_SDN_Pin | ARD_D5_Pin |
-                        SPSGRF_915_SPI3_CSN_Pin;
+                        LED1_Pin | SPSGRF_915_SDN_Pin | ARD_D5_Pin | LED2_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
@@ -978,75 +1033,130 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE END 4 */
 
-/* USER CODE BEGIN Header_StartMyLedTask */
+/* USER CODE BEGIN Header_StartLED_Flash */
 /**
  * @brief  Function implementing the myLedTask thread.
  * @param  argument: Not used
  * @retval None
  */
-/* USER CODE END Header_StartMyLedTask */
-void StartMyLedTask(void *argument)
+/* USER CODE END Header_StartLED_Flash */
+void StartLED_Flash(void *argument)
 {
   /* USER CODE BEGIN 5 */
   /* Infinite loop */
   for (;;)
   {
-    osSemaphoreAcquire(myBinarySem01Handle, osWaitForever);
-    HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_14); // NOTE: LED1
-    osSemaphoreRelease(myBinarySem01Handle);
-    osDelay(500); // 1sec delay
+    // LED1 Clignote des tout le temps
+    HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
+
+    // osSemaphoreAcquire(myBinarySem01Handle, osWaitForever);
+    // HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_14); // NOTE: LED2
+    // osSemaphoreRelease(myBinarySem01Handle);
+
+    osDelay(200);
   }
   /* USER CODE END 5 */
 }
 
-/* USER CODE BEGIN Header_StartMyUartTask */
+/* USER CODE BEGIN Header_UART_Cmd_RX */
 /**
- * @brief This task retrieves data from the queue and sends it through the
- * serial port.
+ * @brief Function implementing the myUartTask thread.
  * @param argument: Not used
  * @retval None
  */
-/* USER CODE END Header_StartMyUartTask */
-void StartMyUartTask(void *argument)
+/* USER CODE END Header_UART_Cmd_RX */
+void UART_Cmd_RX(void *argument)
 {
-  /* USER CODE BEGIN StartMyUartTask */
+  /* USER CODE BEGIN UART_Cmd_RX */
   /* Infinite loop */
   for (;;)
   {
     uint16_t dataOut;
     osStatus_t result =
-      osMessageQueueGet(myDataQueueHandle, &dataOut, NULL, osWaitForever);
+      osMessageQueueGet(CommandQueueHandle, &dataOut, NULL, osWaitForever);
     if (result == osOK)
     {
-      HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5); // NOTE: LED2
+      HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
       uint8_t buffer[5] = "";
       sprintf((char *)buffer, "%d\n\r", dataOut);
       HAL_UART_Transmit(&huart1, buffer, sizeof(buffer), 10);
       osDelay(1);
     }
+    osDelay(1);
   }
-  /* USER CODE END StartMyUartTask */
+  /* USER CODE END UART_Cmd_RX */
 }
 
-/* USER CODE BEGIN Header_StartMyCounterTask */
+/* USER CODE BEGIN Header_UART_SendSample */
 /**
- * @brief This task increments a counter every 5 seconds then puts the counter
- * value into the queue.
+ * @brief Function implementing the mySendSampleTas thread.
  * @param argument: Not used
  * @retval None
  */
-/* USER CODE END Header_StartMyCounterTask */
-void StartMyCounterTask(void *argument)
+/* USER CODE END Header_UART_SendSample */
+void UART_SendSample(void *argument)
 {
-  /* USER CODE BEGIN StartMyCounterTask */
+  /* USER CODE BEGIN UART_SendSample */
   /* Infinite loop */
   for (;;)
   {
-    counter++;
-    osMessageQueuePut(myDataQueueHandle, &counter, 1, osWaitForever);
-    osDelay(5000);
+    osDelay(1);
   }
-  /* USER CODE END StartMyCounterTask */
+  /* USER CODE END UART_SendSample */
+}
+
+/* USER CODE BEGIN Header_ADC_Cmd */
+/**
+ * @brief Function implementing the myADCTask thread.
+ * @param argument: Not used
+ * @retval None
+ */
+/* USER CODE END Header_ADC_Cmd */
+void ADC_Cmd(void *argument)
+{
+  /* USER CODE BEGIN ADC_Cmd */
+  /* Infinite loop */
+  for (;;)
+  {
+    osDelay(1);
+  }
+  /* USER CODE END ADC_Cmd */
+}
+
+/* USER CODE BEGIN Header_TEMP_Read */
+/**
+ * @brief Function implementing the myTempTask thread.
+ * @param argument: Not used
+ * @retval None
+ */
+/* USER CODE END Header_TEMP_Read */
+void TEMP_Read(void *argument)
+{
+  /* USER CODE BEGIN TEMP_Read */
+  /* Infinite loop */
+  for (;;)
+  {
+    osDelay(1);
+  }
+  /* USER CODE END TEMP_Read */
+}
+
+/* USER CODE BEGIN Header_AlarmMsgq */
+/**
+ * @brief Function implementing the myAlarmTask thread.
+ * @param argument: Not used
+ * @retval None
+ */
+/* USER CODE END Header_AlarmMsgq */
+void AlarmMsgq(void *argument)
+{
+  /* USER CODE BEGIN AlarmMsgq */
+  /* Infinite loop */
+  for (;;)
+  {
+    osDelay(1);
+  }
+  /* USER CODE END AlarmMsgq */
 }
 
 /**

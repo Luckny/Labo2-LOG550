@@ -1,6 +1,6 @@
-set(CMAKE_HOST_SYSTEM "Linux-6.13.8-100.fc40.x86_64")
+set(CMAKE_HOST_SYSTEM "Linux-6.13.9-100.fc40.x86_64")
 set(CMAKE_HOST_SYSTEM_NAME "Linux")
-set(CMAKE_HOST_SYSTEM_VERSION "6.13.8-100.fc40.x86_64")
+set(CMAKE_HOST_SYSTEM_VERSION "6.13.9-100.fc40.x86_64")
 set(CMAKE_HOST_SYSTEM_PROCESSOR "x86_64")
 
 include("/home/luckny/School/Log550/Labo2/CodeLabo2/arm-gcc-toolchain.cmake")
