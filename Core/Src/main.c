@@ -125,7 +125,7 @@ volatile uint8_t queue_overflow = 0;
 typedef enum
 {
   ADC_SAMPLE,
-  TEMP_SAMPLE
+  TEMP_SAMPLE,
 } DataType_t;
 
 typedef struct
@@ -133,6 +133,38 @@ typedef struct
   DataType_t type;
   uint32_t value;
 } SampleData_t;
+
+/** @brief read from the adc channel configured and put the value into sensor
+ * Shout out to these videos
+ *
+ * https://www.youtube.com/watch?v=5l-b6lsubBE*
+ * https://www.youtube.com/watch?v=Nl468LUkIU0
+ * https://www.youtube.com/watch?v=1tf-HXAJl6s
+ *
+ * @param sensor defined above
+ * @return 0 false, 1 true
+ */
+uint8_t readSensor(SampleData_t *sensor)
+{
+
+  if (!sensor)
+    return 0; // false
+
+  uint32_t value_raw;
+
+  HAL_ADCEx_Calibration_Start(&hadc1, ADC_SINGLE_ENDED);
+  HAL_ADC_Start(&hadc1);
+  if (HAL_ADC_PollForConversion(&hadc1, 10) != HAL_OK)
+  {
+    HAL_ADC_Stop(&hadc1);
+    return 0; // false
+  }
+
+  sensor->value = HAL_ADC_GetValue(&hadc1);
+
+  HAL_ADC_Stop(&hadc1);
+  return 1; // true
+}
 
 /* USER CODE END PV */
 
@@ -164,6 +196,38 @@ void AlarmMsgq(void *argument);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+void ADC_Select_Channel1(void)
+{
+  ADC_ChannelConfTypeDef sConfig = {0};
+
+  /** Configure Regular Channel
+   */
+  sConfig.Channel = ADC_CHANNEL_1;
+  sConfig.Rank = ADC_REGULAR_RANK_1;
+  sConfig.SamplingTime = ADC_SAMPLETIME_640CYCLES_5;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+}
+
+void ADC_Select_TempChannel(void)
+{
+  ADC_ChannelConfTypeDef sConfig = {0};
+
+  /** Configure Regular Channel
+   */
+  sConfig.Channel = ADC_CHANNEL_TEMPSENSOR;
+  sConfig.Rank = ADC_REGULAR_RANK_1;
+  sConfig.SamplingTime = ADC_SAMPLETIME_640CYCLES_5;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+}
+
+#define Avg_Slope .0025
+#define V25 0.76
 
 /* USER CODE END 0 */
 
@@ -397,7 +461,8 @@ static void MX_ADC1_Init(void)
 {
 
   /* USER CODE BEGIN ADC1_Init 0 */
-
+  // i comment it like here: https://www.youtube.com/watch?v=5l-b6lsubBE*
+  // we will handle initialization ourself in the ADC_Select_Channelx functions
   /* USER CODE END ADC1_Init 0 */
 
   ADC_ChannelConfTypeDef sConfig = {0};
@@ -409,13 +474,13 @@ static void MX_ADC1_Init(void)
   /** Common config
    */
   hadc1.Instance = ADC1;
-  hadc1.Init.ClockPrescaler = ADC_CLOCK_ASYNC_DIV1;
+  hadc1.Init.ClockPrescaler = ADC_CLOCK_ASYNC_DIV64;
   hadc1.Init.Resolution = ADC_RESOLUTION_12B;
   hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
-  hadc1.Init.ScanConvMode = ADC_SCAN_DISABLE;
+  hadc1.Init.ScanConvMode = ADC_SCAN_ENABLE;
   hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
   hadc1.Init.LowPowerAutoWait = DISABLE;
-  hadc1.Init.ContinuousConvMode = DISABLE;
+  hadc1.Init.ContinuousConvMode = ENABLE;
   hadc1.Init.NbrOfConversion = 1;
   hadc1.Init.DiscontinuousConvMode = DISABLE;
   hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
@@ -427,19 +492,28 @@ static void MX_ADC1_Init(void)
   {
     Error_Handler();
   }
-
-  /** Configure Regular Channel
-   */
-  sConfig.Channel = ADC_CHANNEL_1;
-  sConfig.Rank = ADC_REGULAR_RANK_1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_2CYCLES_5;
-  sConfig.SingleDiff = ADC_SINGLE_ENDED;
-  sConfig.OffsetNumber = ADC_OFFSET_NONE;
-  sConfig.Offset = 0;
-  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
+  //
+  // /** Configure Regular Channel
+  // */
+  // sConfig.Channel = ADC_CHANNEL_1;
+  // sConfig.Rank = ADC_REGULAR_RANK_1;
+  // sConfig.SamplingTime = ADC_SAMPLETIME_640CYCLES_5;
+  // sConfig.SingleDiff = ADC_SINGLE_ENDED;
+  // sConfig.OffsetNumber = ADC_OFFSET_NONE;
+  // sConfig.Offset = 0;
+  // if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  // {
+  //   Error_Handler();
+  // }
+  //
+  // /** Configure Regular Channel
+  // */
+  // sConfig.Channel = ADC_CHANNEL_TEMPSENSOR;
+  // sConfig.Rank = ADC_REGULAR_RANK_2;
+  // if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  // {
+  //   Error_Handler();
+  // }
   /* USER CODE BEGIN ADC1_Init 2 */
 
   /* USER CODE END ADC1_Init 2 */
@@ -1163,11 +1237,11 @@ void UART_SendSample(void *argument)
       // get the sem
       if (data.type == ADC_SAMPLE)
       {
-        snprintf(buffer, sizeof(buffer), "SND:%04d\r\n", data.value);
+        snprintf(buffer, sizeof(buffer), "Ch1 Sound??:%04d\r\n", data.value);
       }
       else
       {
-        snprintf(buffer, sizeof(buffer), "TMP:%02dC\r\n", data.value);
+        snprintf(buffer, sizeof(buffer), "TMP Ch:%02dC\r\n", data.value);
       }
       HAL_UART_Transmit(&huart1, (uint8_t *)buffer, strlen(buffer), 100);
       // send the data release the sem
@@ -1187,8 +1261,10 @@ void ADC_Cmd(void *argument)
 {
   /* USER CODE BEGIN ADC_Cmd */
   uint32_t target_tick = xTaskGetTickCount();
-  const uint32_t period = pdMS_TO_TICKS(2); // 200 ms period
+  const uint32_t period = pdMS_TO_TICKS(1000); // 1s
+
   SampleData_t adc_sample = {ADC_SAMPLE, 0};
+
   uint8_t local_acq_active;
   /* Infinite loop */
   for (;;)
@@ -1201,18 +1277,11 @@ void ADC_Cmd(void *argument)
     {
       osMutexAcquire(adcMutexHandle, osWaitForever);
 
-      // configure the sound channel
-      ADC_ChannelConfTypeDef sConfig = {.Channel = ADC_CHANNEL_1,
-                                        .Rank = ADC_REGULAR_RANK_1,
-                                        .SamplingTime =
-                                          ADC_SAMPLETIME_2CYCLES_5};
-      HAL_ADC_ConfigChannel(&hadc1, &sConfig);
+      // sound channel maybe??
+      ADC_Select_Channel1();
 
-      HAL_ADC_Start(&hadc1);
-      if (HAL_ADC_PollForConversion(&hadc1, 2) == HAL_OK)
+      if (readSensor(&adc_sample))
       {
-        adc_sample.value = HAL_ADC_GetValue(&hadc1);
-
         // if cant put in queue change overflow sema
         if (osMessageQueuePut(SensorDataQHandle, &adc_sample, 0, 0) != osOK)
         {
@@ -1254,20 +1323,14 @@ void TEMP_Read(void *argument)
     if (local_acq_active)
     {
       osMutexAcquire(adcMutexHandle, osWaitForever);
-      // reconfigure the ADC for temperature channel
-      ADC_ChannelConfTypeDef sConfig = {
-        .Channel = ADC_CHANNEL_TEMPSENSOR,
-        .Rank = ADC_REGULAR_RANK_1,
-        .SamplingTime = ADC_SAMPLETIME_640CYCLES_5,
-      };
-      HAL_ADC_ConfigChannel(&hadc1, &sConfig);
 
-      HAL_ADC_Start(&hadc1);
-      if (HAL_ADC_PollForConversion(&hadc1, 10) == HAL_OK)
+      // so we can read the raw temp value
+      ADC_Select_TempChannel();
+      if (readSensor(&temp_sample))
       {
-        uint32_t raw_temp = HAL_ADC_GetValue(&hadc1);
-        // Convert to C TODO: check datasheet
-        temp_sample.value = ((3000 - (raw_temp * 3300 / 4095)) / 2.5) + 25;
+
+        temp_sample.value =
+          ((((3.3 * temp_sample.value) / 4095.0) - V25) / Avg_Slope) + 25;
 
         if (osMessageQueuePut(SensorDataQHandle, &temp_sample, 0, 100) != osOK)
         {
@@ -1276,7 +1339,7 @@ void TEMP_Read(void *argument)
       }
       osMutexRelease(adcMutexHandle);
     }
-    osDelay(pdMS_TO_TICKS(1000)); // Wait 1s before next read
+    osDelay(pdMS_TO_TICKS(2500)); // Wait 1s before next read
   }
   /* USER CODE END TEMP_Read */
 }
