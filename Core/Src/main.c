@@ -1209,7 +1209,7 @@ void ADC_Cmd(void *argument)
       HAL_ADC_ConfigChannel(&hadc1, &sConfig);
 
       HAL_ADC_Start(&hadc1);
-      if (HAL_ADC_PollForConversion(&hadc1, 10) == HAL_OK)
+      if (HAL_ADC_PollForConversion(&hadc1, 2) == HAL_OK)
       {
         adc_sample.value = HAL_ADC_GetValue(&hadc1);
 
@@ -1253,7 +1253,7 @@ void TEMP_Read(void *argument)
 
     if (local_acq_active)
     {
-      osMutexRelease(adcMutexHandle);
+      osMutexAcquire(adcMutexHandle, osWaitForever);
       // reconfigure the ADC for temperature channel
       ADC_ChannelConfTypeDef sConfig = {
         .Channel = ADC_CHANNEL_TEMPSENSOR,
