@@ -15,11 +15,12 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "cmsis_os.h"
-#include "stm32l4xx_hal_gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -102,9 +103,18 @@ const osMessageQueueAttr_t SensorDataQ_attributes = {.name = "SensorDataQ"};
 /* Definitions for CommandQueue */
 osMessageQueueId_t CommandQueueHandle;
 const osMessageQueueAttr_t CommandQueue_attributes = {.name = "CommandQueue"};
-/* Definitions for myBinarySem01 */
-osSemaphoreId_t myBinarySem01Handle;
-const osSemaphoreAttr_t myBinarySem01_attributes = {.name = "myBinarySem01"};
+/* Definitions for acquisitionMutex */
+osMutexId_t acquisitionMutexHandle;
+const osMutexAttr_t acquisitionMutex_attributes = {.name = "acquisitionMutex"};
+/* Definitions for LED3Mutex */
+osMutexId_t LED3MutexHandle;
+const osMutexAttr_t LED3Mutex_attributes = {.name = "LED3Mutex"};
+/* Definitions for adcMutex */
+osMutexId_t adcMutexHandle;
+const osMutexAttr_t adcMutex_attributes = {.name = "adcMutex"};
+/* Definitions for alarmSemaphore */
+osSemaphoreId_t alarmSemaphoreHandle;
+const osSemaphoreAttr_t alarmSemaphore_attributes = {.name = "alarmSemaphore"};
 /* USER CODE BEGIN PV */
 uint16_t counter = 0;
 
@@ -207,18 +217,26 @@ int main(void)
 
   /* Init scheduler */
   osKernelInitialize();
+  /* Create the mutex(es) */
+  /* creation of acquisitionMutex */
+  acquisitionMutexHandle = osMutexNew(&acquisitionMutex_attributes);
+
+  /* creation of LED3Mutex */
+  LED3MutexHandle = osMutexNew(&LED3Mutex_attributes);
+
+  /* creation of adcMutex */
+  adcMutexHandle = osMutexNew(&adcMutex_attributes);
 
   /* USER CODE BEGIN RTOS_MUTEX */
   /* add mutexes, ... */
   /* USER CODE END RTOS_MUTEX */
 
   /* Create the semaphores(s) */
-  /* creation of myBinarySem01 */
-  myBinarySem01Handle = osSemaphoreNew(1, 0, &myBinarySem01_attributes);
+  /* creation of alarmSemaphore */
+  alarmSemaphoreHandle = osSemaphoreNew(1, 0, &alarmSemaphore_attributes);
 
   /* USER CODE BEGIN RTOS_SEMAPHORES */
   /* add semaphores, ... */
-  osSemaphoreRelease(myBinarySem01Handle);
   /* USER CODE END RTOS_SEMAPHORES */
 
   /* USER CODE BEGIN RTOS_TIMERS */
@@ -227,8 +245,7 @@ int main(void)
 
   /* Create the queue(s) */
   /* creation of SensorDataQ */
-  SensorDataQHandle =
-    osMessageQueueNew(2, sizeof(uint16_t), &SensorDataQ_attributes);
+  SensorDataQHandle = osMessageQueueNew(10, 8, &SensorDataQ_attributes);
 
   /* creation of CommandQueue */
   CommandQueueHandle =
@@ -1048,13 +1065,21 @@ void StartLED_Flash(void *argument)
   uint32_t targetTick = xTaskGetTickCount();
   const uint32_t period = pdMS_TO_TICKS(200); // 200 ms period
 
+  uint8_t local_acq_active;
+  uint8_t local_queue_overflow;
+
   /* Infinite loop */
   for (;;)
   {
     // LED1 Clignote des tout le temps
     HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
 
-    if (acquisition_active)
+    // prendre l' etat d'acquisition
+    osMutexAcquire(acquisitionMutexHandle, osWaitForever);
+    local_acq_active = acquisition_active;
+    osMutexRelease(acquisitionMutexHandle);
+
+    if (local_acq_active)
     {
       // LED2 Clignote quand l' acquisition est active
       HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_14);
@@ -1065,18 +1090,21 @@ void StartLED_Flash(void *argument)
       HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_RESET);
     }
 
-    // LED3 allumé si débordement
-    if (queue_overflow)
+    // prendre l' etat de la queue
+    osMutexAcquire(LED3MutexHandle, osWaitForever);
+    local_queue_overflow = queue_overflow;
+    osMutexRelease(LED3MutexHandle);
+
+    // LED3 allumé si débordement arrive 1 fois
+    if (local_queue_overflow)
     {
+      char buffer[20];
+      snprintf(buffer, sizeof(buffer), "QUEUE: OVERFLOW\r\n");
+      HAL_UART_Transmit(&huart1, (uint8_t *)buffer, strlen(buffer), 100);
       HAL_GPIO_WritePin(GPIOC, GPIO_PIN_9, GPIO_PIN_SET);
     }
 
-    // osSemaphoreAcquire(myBinarySem01Handle, osWaitForever);
-    // HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_14); // NOTE: LED2
-    // osSemaphoreRelease(myBinarySem01Handle);
-
-    targetTick += period;     // On calcule le prochain tick cible
-    osDelayUntil(targetTick); // On attend jusqu'à la prochaine itération
+    osDelayUntil(targetTick += period);
   }
   /* USER CODE END 5 */
 }
@@ -1093,21 +1121,23 @@ void UART_Cmd_RX(void *argument)
   /* USER CODE BEGIN UART_Cmd_RX */
   /* Infinite loop */
   uint8_t rx_data;
+  const TickType_t xDelay = pdMS_TO_TICKS(200); // string 200ms polling
 
   for (;;)
   {
-    if (HAL_UART_Receive(&huart4, &rx_data, 1, 200) == HAL_OK)
+    if (HAL_UART_Receive(&huart1, &rx_data, 1, 0) == HAL_OK)
     {
-      if (rx_data == 'S')
-      {
-        acquisition_active = 1;
-      }
-      else if (rx_data == 'X')
-      {
-        acquisition_active = 0;
-      }
+      // Echo to scren
+      // HAL_UART_Transmit(&huart1, &rx_data, 1, 10);
+
+      // section critique
+      osMutexAcquire(acquisitionMutexHandle, osWaitForever);
+      acquisition_active = (rx_data == 'S')   ? 1
+                           : (rx_data == 'X') ? 0
+                                              : acquisition_active;
+      osMutexRelease(acquisitionMutexHandle);
     }
-    osDelay(pdMS_TO_TICKS(200)); // Vérification toutes les 200ms
+    osDelay(xDelay);
   }
   /* USER CODE END UART_Cmd_RX */
 }
@@ -1122,10 +1152,26 @@ void UART_Cmd_RX(void *argument)
 void UART_SendSample(void *argument)
 {
   /* USER CODE BEGIN UART_SendSample */
+  SampleData_t data;
+  char buffer[20];
   /* Infinite loop */
   for (;;)
   {
-    osDelay(1);
+    if (osMessageQueueGet(SensorDataQHandle, &data, NULL, osWaitForever) ==
+        osOK)
+    {
+      // get the sem
+      if (data.type == ADC_SAMPLE)
+      {
+        snprintf(buffer, sizeof(buffer), "SND:%04d\r\n", data.value);
+      }
+      else
+      {
+        snprintf(buffer, sizeof(buffer), "TMP:%02dC\r\n", data.value);
+      }
+      HAL_UART_Transmit(&huart1, (uint8_t *)buffer, strlen(buffer), 100);
+      // send the data release the sem
+    }
   }
   /* USER CODE END UART_SendSample */
 }
@@ -1140,10 +1186,46 @@ void UART_SendSample(void *argument)
 void ADC_Cmd(void *argument)
 {
   /* USER CODE BEGIN ADC_Cmd */
+  uint32_t target_tick = xTaskGetTickCount();
+  const uint32_t period = pdMS_TO_TICKS(2); // 200 ms period
+  SampleData_t adc_sample = {ADC_SAMPLE, 0};
+  uint8_t local_acq_active;
   /* Infinite loop */
   for (;;)
   {
-    osDelay(1);
+    osMutexAcquire(acquisitionMutexHandle, osWaitForever);
+    local_acq_active = acquisition_active;
+    osMutexRelease(acquisitionMutexHandle);
+
+    if (local_acq_active)
+    {
+      osMutexAcquire(adcMutexHandle, osWaitForever);
+
+      // configure the sound channel
+      ADC_ChannelConfTypeDef sConfig = {.Channel = ADC_CHANNEL_1,
+                                        .Rank = ADC_REGULAR_RANK_1,
+                                        .SamplingTime =
+                                          ADC_SAMPLETIME_2CYCLES_5};
+      HAL_ADC_ConfigChannel(&hadc1, &sConfig);
+
+      HAL_ADC_Start(&hadc1);
+      if (HAL_ADC_PollForConversion(&hadc1, 10) == HAL_OK)
+      {
+        adc_sample.value = HAL_ADC_GetValue(&hadc1);
+
+        // if cant put in queue change overflow sema
+        if (osMessageQueuePut(SensorDataQHandle, &adc_sample, 0, 0) != osOK)
+        {
+          osSemaphoreRelease(alarmSemaphoreHandle);
+        }
+      }
+      osMutexRelease(adcMutexHandle);
+      osDelayUntil(target_tick += period);
+    }
+    else
+    {
+      osDelay(pdMS_TO_TICKS(10)); // Wait 10ms before next read
+    }
   }
   /* USER CODE END ADC_Cmd */
 }
@@ -1158,10 +1240,43 @@ void ADC_Cmd(void *argument)
 void TEMP_Read(void *argument)
 {
   /* USER CODE BEGIN TEMP_Read */
+  SampleData_t temp_sample = {TEMP_SAMPLE, 0};
+  uint8_t local_acq_active;
+
   /* Infinite loop */
   for (;;)
   {
-    osDelay(1);
+    // get the acquisition state
+    osMutexAcquire(acquisitionMutexHandle, osWaitForever);
+    local_acq_active = acquisition_active;
+    osMutexRelease(acquisitionMutexHandle);
+
+    if (local_acq_active)
+    {
+      osMutexRelease(adcMutexHandle);
+      // reconfigure the ADC for temperature channel
+      ADC_ChannelConfTypeDef sConfig = {
+        .Channel = ADC_CHANNEL_TEMPSENSOR,
+        .Rank = ADC_REGULAR_RANK_1,
+        .SamplingTime = ADC_SAMPLETIME_640CYCLES_5,
+      };
+      HAL_ADC_ConfigChannel(&hadc1, &sConfig);
+
+      HAL_ADC_Start(&hadc1);
+      if (HAL_ADC_PollForConversion(&hadc1, 100) == HAL_OK)
+      {
+        uint32_t raw_temp = HAL_ADC_GetValue(&hadc1);
+        // Convert to C TODO: check datasheet
+        temp_sample.value = ((3000 - (raw_temp * 3300 / 4095)) / 2.5) + 25;
+
+        if (osMessageQueuePut(SensorDataQHandle, &temp_sample, 0, 100) != osOK)
+        {
+          osSemaphoreRelease(alarmSemaphoreHandle);
+        }
+      }
+      osMutexRelease(adcMutexHandle);
+    }
+    osDelay(1000); // Wait 1s before next read
   }
   /* USER CODE END TEMP_Read */
 }
@@ -1179,7 +1294,12 @@ void AlarmMsgq(void *argument)
   /* Infinite loop */
   for (;;)
   {
-    osDelay(1);
+    if (osSemaphoreAcquire(alarmSemaphoreHandle, osWaitForever) == osOK)
+    {
+      osMutexAcquire(LED3MutexHandle, osWaitForever);
+      queue_overflow = 1;
+      osMutexRelease(LED3MutexHandle);
+    }
   }
   /* USER CODE END AlarmMsgq */
 }

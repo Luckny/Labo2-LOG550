@@ -72,4 +72,8 @@ CMakeFiles/Labo2.elf.dir/Core/Src/main.c.obj: \
  /home/luckny/School/Log550/Labo2/CodeLabo2/Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2/cmsis_os2.h \
  /usr/arm-none-eabi/include/stdio.h \
  /usr/lib/gcc/arm-none-eabi/14.1.0/include/stdarg.h \
- /usr/arm-none-eabi/include/sys/stdio.h
+ /usr/arm-none-eabi/include/sys/stdio.h \
+ /usr/arm-none-eabi/include/string.h \
+ /usr/arm-none-eabi/include/sys/_locale.h \
+ /usr/arm-none-eabi/include/strings.h \
+ /usr/arm-none-eabi/include/sys/string.h
