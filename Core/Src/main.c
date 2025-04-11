@@ -74,7 +74,7 @@ osThreadId_t mySendSampleTasHandle;
 const osThreadAttr_t mySendSampleTas_attributes = {
   .name = "mySendSampleTas",
   .stack_size = 256 * 4,
-  .priority = (osPriority_t)osPriorityLow6,
+  .priority = (osPriority_t)osPriorityNormal,
 };
 /* Definitions for myADCTask */
 osThreadId_t myADCTaskHandle;
@@ -1263,7 +1263,7 @@ void TEMP_Read(void *argument)
       HAL_ADC_ConfigChannel(&hadc1, &sConfig);
 
       HAL_ADC_Start(&hadc1);
-      if (HAL_ADC_PollForConversion(&hadc1, 100) == HAL_OK)
+      if (HAL_ADC_PollForConversion(&hadc1, 10) == HAL_OK)
       {
         uint32_t raw_temp = HAL_ADC_GetValue(&hadc1);
         // Convert to C TODO: check datasheet
@@ -1276,7 +1276,7 @@ void TEMP_Read(void *argument)
       }
       osMutexRelease(adcMutexHandle);
     }
-    osDelay(1000); // Wait 1s before next read
+    osDelay(pdMS_TO_TICKS(1000)); // Wait 1s before next read
   }
   /* USER CODE END TEMP_Read */
 }
