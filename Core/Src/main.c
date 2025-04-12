@@ -41,7 +41,9 @@
 /* Private variables ---------------------------------------------------------*/
 ADC_HandleTypeDef hadc1;
 
+DFSDM_Filter_HandleTypeDef hdfsdm1_filter0;
 DFSDM_Channel_HandleTypeDef hdfsdm1_channel2;
+DMA_HandleTypeDef hdma_dfsdm1_flt0;
 
 I2C_HandleTypeDef hi2c1;
 I2C_HandleTypeDef hi2c2;
@@ -152,7 +154,6 @@ uint8_t readSensor(SampleData_t *sensor)
 
   uint32_t value_raw;
 
-  HAL_ADCEx_Calibration_Start(&hadc1, ADC_SINGLE_ENDED);
   HAL_ADC_Start(&hadc1);
   if (HAL_ADC_PollForConversion(&hadc1, 10) != HAL_OK)
   {
@@ -172,6 +173,7 @@ uint8_t readSensor(SampleData_t *sensor)
 void SystemClock_Config(void);
 void PeriphCommonClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_DFSDM1_Init(void);
 static void MX_I2C1_Init(void);
@@ -264,6 +266,7 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_ADC1_Init();
   MX_DFSDM1_Init();
   MX_I2C1_Init();
@@ -277,6 +280,7 @@ int main(void)
   MX_USB_OTG_FS_USB_Init();
   /* USER CODE BEGIN 2 */
 
+  HAL_ADCEx_Calibration_Start(&hadc1, ADC_SINGLE_ENDED);
   /* USER CODE END 2 */
 
   /* Init scheduler */
@@ -492,10 +496,10 @@ static void MX_ADC1_Init(void)
   {
     Error_Handler();
   }
-  //
+
   // /** Configure Regular Channel
   // */
-  // sConfig.Channel = ADC_CHANNEL_1;
+  // sConfig.Channel = ADC_CHANNEL_TEMPSENSOR;
   // sConfig.Rank = ADC_REGULAR_RANK_1;
   // sConfig.SamplingTime = ADC_SAMPLETIME_640CYCLES_5;
   // sConfig.SingleDiff = ADC_SINGLE_ENDED;
@@ -508,7 +512,7 @@ static void MX_ADC1_Init(void)
   //
   // /** Configure Regular Channel
   // */
-  // sConfig.Channel = ADC_CHANNEL_TEMPSENSOR;
+  // sConfig.Channel = ADC_CHANNEL_1;
   // sConfig.Rank = ADC_REGULAR_RANK_2;
   // if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
   // {
@@ -534,11 +538,22 @@ static void MX_DFSDM1_Init(void)
   /* USER CODE BEGIN DFSDM1_Init 1 */
 
   /* USER CODE END DFSDM1_Init 1 */
+  hdfsdm1_filter0.Instance = DFSDM1_Filter0;
+  hdfsdm1_filter0.Init.RegularParam.Trigger = DFSDM_FILTER_SW_TRIGGER;
+  hdfsdm1_filter0.Init.RegularParam.FastMode = ENABLE;
+  hdfsdm1_filter0.Init.RegularParam.DmaMode = ENABLE;
+  hdfsdm1_filter0.Init.FilterParam.SincOrder = DFSDM_FILTER_SINC3_ORDER;
+  hdfsdm1_filter0.Init.FilterParam.Oversampling = 250;
+  hdfsdm1_filter0.Init.FilterParam.IntOversampling = 1;
+  if (HAL_DFSDM_FilterInit(&hdfsdm1_filter0) != HAL_OK)
+  {
+    Error_Handler();
+  }
   hdfsdm1_channel2.Instance = DFSDM1_Channel2;
   hdfsdm1_channel2.Init.OutputClock.Activation = ENABLE;
   hdfsdm1_channel2.Init.OutputClock.Selection =
     DFSDM_CHANNEL_OUTPUT_CLOCK_SYSTEM;
-  hdfsdm1_channel2.Init.OutputClock.Divider = 2;
+  hdfsdm1_channel2.Init.OutputClock.Divider = 60;
   hdfsdm1_channel2.Init.Input.Multiplexer = DFSDM_CHANNEL_EXTERNAL_INPUTS;
   hdfsdm1_channel2.Init.Input.DataPacking = DFSDM_CHANNEL_STANDARD_MODE;
   hdfsdm1_channel2.Init.Input.Pins = DFSDM_CHANNEL_SAME_CHANNEL_PINS;
@@ -550,6 +565,11 @@ static void MX_DFSDM1_Init(void)
   hdfsdm1_channel2.Init.Offset = 0;
   hdfsdm1_channel2.Init.RightBitShift = 0x00;
   if (HAL_DFSDM_ChannelInit(&hdfsdm1_channel2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_DFSDM_FilterConfigRegChannel(&hdfsdm1_filter0, DFSDM_CHANNEL_2,
+                                       DFSDM_CONTINUOUS_CONV_ON) != HAL_OK)
   {
     Error_Handler();
   }
@@ -574,7 +594,7 @@ static void MX_I2C1_Init(void)
 
   /* USER CODE END I2C1_Init 1 */
   hi2c1.Instance = I2C1;
-  hi2c1.Init.Timing = 0x307075B1;
+  hi2c1.Init.Timing = 0x30A175AB;
   hi2c1.Init.OwnAddress1 = 0;
   hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
   hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
@@ -621,7 +641,7 @@ static void MX_I2C2_Init(void)
 
   /* USER CODE END I2C2_Init 1 */
   hi2c2.Instance = I2C2;
-  hi2c2.Init.Timing = 0x307075B1;
+  hi2c2.Init.Timing = 0x30A175AB;
   hi2c2.Init.OwnAddress1 = 0;
   hi2c2.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
   hi2c2.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
@@ -956,6 +976,22 @@ static void MX_USB_OTG_FS_USB_Init(void)
 }
 
 /**
+ * Enable DMA controller clock
+ */
+static void MX_DMA_Init(void)
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMAMUX1_CLK_ENABLE();
+  __HAL_RCC_DMA1_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA1_Channel1_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Channel1_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Channel1_IRQn);
+}
+
+/**
  * @brief GPIO Initialization Function
  * @param None
  * @retval None
@@ -1135,7 +1171,8 @@ static void MX_GPIO_Init(void)
 void StartLED_Flash(void *argument)
 {
   /* USER CODE BEGIN 5 */
-  // On veut fait clignoter EXACTEMENT toutes les 200ms
+  // TODO: X pour arreter l' acquisition ne marche pas
+  //  On veut fait clignoter EXACTEMENT toutes les 200ms
   uint32_t targetTick = xTaskGetTickCount();
   const uint32_t period = pdMS_TO_TICKS(200); // 200 ms period
 
@@ -1206,8 +1243,8 @@ void UART_Cmd_RX(void *argument)
 
       // section critique
       osMutexAcquire(acquisitionMutexHandle, osWaitForever);
-      acquisition_active = (rx_data == 'S')   ? 1
-                           : (rx_data == 'X') ? 0
+      acquisition_active = (rx_data == 's')   ? 1
+                           : (rx_data == 'x') ? 0
                                               : acquisition_active;
       osMutexRelease(acquisitionMutexHandle);
     }
@@ -1237,11 +1274,11 @@ void UART_SendSample(void *argument)
       // get the sem
       if (data.type == ADC_SAMPLE)
       {
-        snprintf(buffer, sizeof(buffer), "Ch1 Sound??:%04d\r\n", data.value);
+        snprintf(buffer, sizeof(buffer), "Sound:%04d\r\n", data.value);
       }
       else
       {
-        snprintf(buffer, sizeof(buffer), "TMP Ch:%02dC\r\n", data.value);
+        snprintf(buffer, sizeof(buffer), "TMP:%02dC\r\n", data.value);
       }
       HAL_UART_Transmit(&huart1, (uint8_t *)buffer, strlen(buffer), 100);
       // send the data release the sem
@@ -1260,8 +1297,9 @@ void UART_SendSample(void *argument)
 void ADC_Cmd(void *argument)
 {
   /* USER CODE BEGIN ADC_Cmd */
+  // TODO: format the sound the values are too big
   uint32_t target_tick = xTaskGetTickCount();
-  const uint32_t period = pdMS_TO_TICKS(1000); // 1s
+  const uint32_t period = pdMS_TO_TICKS(2);
 
   SampleData_t adc_sample = {ADC_SAMPLE, 0};
 
@@ -1339,7 +1377,7 @@ void TEMP_Read(void *argument)
       }
       osMutexRelease(adcMutexHandle);
     }
-    osDelay(pdMS_TO_TICKS(2500)); // Wait 1s before next read
+    osDelay(pdMS_TO_TICKS(1000)); // Wait 1s before next read
   }
   /* USER CODE END TEMP_Read */
 }
