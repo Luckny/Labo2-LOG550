@@ -1321,7 +1321,7 @@ void ADC_Cmd(void *argument)
       if (readSensor(&adc_sample))
       {
         // if cant put in queue change overflow sema
-        if (osMessageQueuePut(SensorDataQHandle, &adc_sample, 0, 0) != osOK)
+        if (osMessageQueuePut(SensorDataQHandle, &adc_sample>>1, 0, 0) != osOK)
         {
           osSemaphoreRelease(alarmSemaphoreHandle);
         }
